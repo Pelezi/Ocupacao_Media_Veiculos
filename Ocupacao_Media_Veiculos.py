@@ -1,0 +1,133 @@
+import streamlit as st
+import mysql.connector
+import decimal
+import pandas as pd
+
+def bd_phoenix(vw_name):
+    # Parametros de Login AWS
+    config = {
+        'user': 'user_automation_jpa',
+        'password': 'luck_jpa_2024',
+        'host': 'comeia.cixat7j68g0n.us-east-1.rds.amazonaws.com',
+        'database': 'test_phoenix_joao_pessoa'
+    }
+    # Conexão às Views
+    conexao = mysql.connector.connect(**config)
+    cursor = conexao.cursor()
+
+    request_name = f'SELECT * FROM {vw_name}'
+
+    # Script MySQL para requests
+    cursor.execute(request_name)
+    # Coloca o request em uma variavel
+    resultado = cursor.fetchall()
+    # Busca apenas os cabeçalhos do Banco
+    cabecalho = [desc[0] for desc in cursor.description]
+
+    # Fecha a conexão
+    cursor.close()
+    conexao.close()
+
+    # Coloca em um dataframe e converte decimal para float
+    df = pd.DataFrame(resultado, columns=cabecalho)
+    df = df.applymap(lambda x: float(x) if isinstance(x, decimal.Decimal) else x)
+    return df
+
+# Configuração da página Streamlit
+st.set_page_config(layout='wide')
+
+if not 'df_vehicle_occupation' in st.session_state:
+    # Carrega os dados da view `vw_vehicle_ocupation`
+    st.session_state.df_vehicle_occupation = bd_phoenix('vw_vehicle_occupation')
+
+st.title('Ocupação Média por Veículo')
+
+st.divider()
+
+# Input de intervalo de data
+row0 = st.columns(4)
+with row0[0]:
+    periodo = st.date_input('Período', value=[], format='DD/MM/YYYY')
+
+# Filtra os dados conforme o intervalo de tempo informado
+if len(periodo) == 2:  # Verifica se o intervalo está completo
+    data_inicial, data_final = periodo
+
+    df_filtrado = st.session_state.df_vehicle_occupation[
+        (st.session_state.df_vehicle_occupation['Data Execucao'] >= data_inicial) &
+        (st.session_state.df_vehicle_occupation['Data Execucao'] <= data_final)
+    ].reset_index(drop=True)
+
+    # Calcula a ocupação média por veículo, agrupando por Veículo e Escala
+    ocupacao_por_escala = df_filtrado.groupby(['Tipo de Veiculo', 'Veiculo', 'Escala'])[['Total ADT', 'Total CHD']].sum().reset_index()
+
+    # Adiciona uma coluna para a soma de ADT e CHD
+    ocupacao_por_escala['Ocupacao Total'] = ocupacao_por_escala['Total ADT'] + ocupacao_por_escala['Total CHD']
+
+    # Agora, calculamos a média de ocupação total (ADT + CHD) por veículo
+    ocupacao_media_tipo_veiculo = ocupacao_por_escala.groupby('Tipo de Veiculo')['Ocupacao Total'].mean().reset_index()
+    ocupacao_media_veiculo = ocupacao_por_escala.groupby(['Tipo de Veiculo', 'Veiculo'])['Ocupacao Total'].mean().reset_index()
+
+    # Renomeia a coluna para 'Ocupação Média'
+    ocupacao_media_tipo_veiculo = ocupacao_media_tipo_veiculo.rename(columns={'Ocupacao Total': 'Ocupação Média'}) 
+    ocupacao_media_veiculo = ocupacao_media_veiculo.rename(columns={'Ocupacao Total': 'Ocupação Média'})
+
+    # Exibe a lista de tipos de veículos para seleção
+    lista_veiculos = ocupacao_media_veiculo['Tipo de Veiculo'].unique().tolist()
+    with row0[1]:
+        tipo_veiculo_selecionado = st.selectbox('Selecionar Tipo de Veículo', sorted(lista_veiculos), index=None)
+
+    # Se um tipo de veículo for selecionado, exibe a ocupação média
+    if tipo_veiculo_selecionado:
+        ocupacao_veiculo = ocupacao_media_tipo_veiculo[ocupacao_media_tipo_veiculo['Tipo de Veiculo'] == tipo_veiculo_selecionado]
+        ocupacao = ocupacao_veiculo['Ocupação Média'].values[0]  # Acessa a ocupação média
+
+        # Filtra as escalas do veículo selecionado
+        df_filtrado_veiculo = ocupacao_por_escala[ocupacao_por_escala['Tipo de Veiculo'] == tipo_veiculo_selecionado]
+        #Remove a coluna de Tipo de Veículo
+        df_filtrado_veiculo = df_filtrado_veiculo.drop(columns=['Tipo de Veiculo'])
+        
+        # Exibe o dataframe das escalas e adiciona um seletor de escala
+        
+        #ecibe um selectbox para escolher o veículo dentro do dataframe
+        with row0[2]:
+            veiculo_selecionado = st.selectbox('Selecionar Veículo', df_filtrado_veiculo['Veiculo'].unique().tolist(), index=None)
+        
+        if veiculo_selecionado:
+            # Filtra os serviços associados ao veículo selecionado
+            df_servicos_veiculo = df_filtrado_veiculo[df_filtrado_veiculo['Veiculo'] == veiculo_selecionado]
+            # Lista de escalas para o veículo selecionado
+            escalas_disponiveis = df_servicos_veiculo['Escala'].unique().tolist()
+            # Exibe um seletor para escolher a escala dentro do dataframe
+            with row0[3]:
+                escala_selecionada = st.selectbox('Selecionar Escala', escalas_disponiveis, index=None)
+
+            if escala_selecionada:
+                # Filtra os serviços associados à escala selecionada
+                df_servicos_escala = df_filtrado[
+                    (df_filtrado['Tipo de Veiculo'] == tipo_veiculo_selecionado) &
+                    (df_filtrado['Escala'] == escala_selecionada)
+                ]
+            
+                st.divider()
+                if len(df_servicos_escala) > 1:
+                    st.subheader(f'{len(df_servicos_escala)} serviços associados a Escala {escala_selecionada}')
+                else:
+                    st.subheader(f'{len(df_servicos_escala)} serviço associado a Escala {escala_selecionada}')
+                st.dataframe(df_servicos_escala, hide_index=True, use_container_width=True)
+                
+            st.divider()
+            if len(df_servicos_veiculo) > 1:
+                st.subheader(f'{len(df_servicos_veiculo)} escalas associadas ao veículo {veiculo_selecionado}')
+            else:
+                st.subheader(f'{len(df_servicos_veiculo)} escala associada ao veículo {veiculo_selecionado}')
+            st.dataframe(df_servicos_veiculo, hide_index=True, use_container_width=True)
+            
+        st.divider()
+        st.subheader(f'Ocupação Média do Veículo {tipo_veiculo_selecionado}: {ocupacao:.2f} passageiros')
+        st.dataframe(df_filtrado_veiculo, hide_index=True, use_container_width=True)
+            
+    # Exibe o dataframe completo
+    st.divider()
+    st.subheader('Ocupação Média por Tipo de Veículo')
+    st.dataframe(ocupacao_media_tipo_veiculo, hide_index=True, use_container_width=True)
