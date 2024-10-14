@@ -59,31 +59,48 @@ if len(periodo) == 2:  # Verifica se o intervalo está completo
     ].reset_index(drop=True)
 
     # Calcula a ocupação média por veículo, agrupando por Veículo e Escala
-    ocupacao_por_escala = df_filtrado.groupby(['Tipo de Veiculo', 'Veiculo', 'Escala'])[['Total ADT', 'Total CHD']].sum().reset_index()
+    ocupacao_por_escala = df_filtrado.groupby(['Tipo de Veiculo', 'Veiculo', 'Capacidade', 'Escala'])[['Total ADT', 'Total CHD']].sum().reset_index()
 
     # Adiciona uma coluna para a soma de ADT e CHD
-    ocupacao_por_escala['Ocupacao Total'] = ocupacao_por_escala['Total ADT'] + ocupacao_por_escala['Total CHD']
+    ocupacao_por_escala['Ocupação Total'] = ocupacao_por_escala['Total ADT'] + ocupacao_por_escala['Total CHD']
 
     # Agora, calculamos a média de ocupação total (ADT + CHD) por veículo
-    ocupacao_media_tipo_veiculo = ocupacao_por_escala.groupby('Tipo de Veiculo')['Ocupacao Total'].mean().reset_index()
-    ocupacao_media_veiculo = ocupacao_por_escala.groupby(['Tipo de Veiculo', 'Veiculo'])['Ocupacao Total'].mean().reset_index()
+    ocupacao_media_tipo_veiculo = ocupacao_por_escala.groupby('Tipo de Veiculo')['Ocupação Total'].mean().reset_index()
+    ocupacao_media_veiculo = ocupacao_por_escala.groupby(['Tipo de Veiculo', 'Veiculo', 'Capacidade'])['Ocupação Total'].mean().reset_index()
+    ocupacao_por_escala_veiculo = ocupacao_por_escala.groupby(['Tipo de Veiculo', 'Veiculo'])['Ocupação Total'].mean().reset_index()
+    
+    ocupacao_media_veiculo['Ocupação Total'] = ocupacao_media_veiculo['Ocupação Total'].round(1)
+    #Adiciona coluna de ocupação média percentual
+    ocupacao_media_veiculo['Ocupação Média (%)'] = (ocupacao_media_veiculo['Ocupação Total'] / ocupacao_media_veiculo['Capacidade']) * 100
+    
+    #Adiciona "/" + capacidade do veículo e limite
+    ocupacao_media_veiculo['Ocupação Total'] = ocupacao_media_veiculo['Ocupação Total'].astype(str) + "/" + ocupacao_media_veiculo['Capacidade'].astype(str)
+    
 
     # Renomeia a coluna para 'Ocupação Média'
-    ocupacao_media_tipo_veiculo = ocupacao_media_tipo_veiculo.rename(columns={'Ocupacao Total': 'Ocupação Média'}) 
-    ocupacao_media_veiculo = ocupacao_media_veiculo.rename(columns={'Ocupacao Total': 'Ocupação Média'})
+    ocupacao_media_tipo_veiculo = ocupacao_media_tipo_veiculo.rename(columns={'Ocupação Total': 'Ocupação Média Nominal'}) 
+    ocupacao_media_veiculo = ocupacao_media_veiculo.rename(columns={'Ocupação Total': 'Ocupação Média Nominal'})
+    
+    ocupacao_media_percentual_tipo_veiculo = ocupacao_media_veiculo.groupby('Tipo de Veiculo')['Ocupação Média (%)'].mean().reset_index()
+    ocupacao_media_tipo_veiculo = ocupacao_media_tipo_veiculo.merge(ocupacao_media_percentual_tipo_veiculo, on='Tipo de Veiculo')
+
+    
 
     # Exibe a lista de tipos de veículos para seleção
-    lista_veiculos = ocupacao_media_veiculo['Tipo de Veiculo'].unique().tolist()
+    lista_veiculos = ocupacao_por_escala['Tipo de Veiculo'].unique().tolist()
     with row0[1]:
         tipo_veiculo_selecionado = st.selectbox('Selecionar Tipo de Veículo', sorted(lista_veiculos), index=None)
 
     # Se um tipo de veículo for selecionado, exibe a ocupação média
     if tipo_veiculo_selecionado:
         ocupacao_veiculo = ocupacao_media_tipo_veiculo[ocupacao_media_tipo_veiculo['Tipo de Veiculo'] == tipo_veiculo_selecionado]
-        ocupacao = ocupacao_veiculo['Ocupação Média'].values[0]  # Acessa a ocupação média
+        ocupacao_media_veiculo = ocupacao_media_veiculo[ocupacao_media_veiculo['Tipo de Veiculo'] == tipo_veiculo_selecionado]
+        #Remove a coluna de Tipo de Veículo
+        ocupacao_media_veiculo = ocupacao_media_veiculo.drop(columns=['Tipo de Veiculo'])
+        ocupacao = ocupacao_veiculo['Ocupação Média Nominal'].values[0]  # Acessa a ocupação média
 
         # Filtra as escalas do veículo selecionado
-        df_filtrado_veiculo = ocupacao_por_escala[ocupacao_por_escala['Tipo de Veiculo'] == tipo_veiculo_selecionado]
+        df_filtrado_veiculo = ocupacao_por_escala_veiculo[ocupacao_por_escala_veiculo['Tipo de Veiculo'] == tipo_veiculo_selecionado]
         #Remove a coluna de Tipo de Veículo
         df_filtrado_veiculo = df_filtrado_veiculo.drop(columns=['Tipo de Veiculo'])
         
@@ -94,8 +111,13 @@ if len(periodo) == 2:  # Verifica se o intervalo está completo
             veiculo_selecionado = st.selectbox('Selecionar Veículo', df_filtrado_veiculo['Veiculo'].unique().tolist(), index=None)
         
         if veiculo_selecionado:
-            # Filtra os serviços associados ao veículo selecionado
-            df_servicos_veiculo = df_filtrado_veiculo[df_filtrado_veiculo['Veiculo'] == veiculo_selecionado]
+            # Filtra os serviços associados ao tipo de veículo e veículo selecionados
+            df_servicos_veiculo = ocupacao_por_escala[ocupacao_por_escala['Tipo de Veiculo'] == tipo_veiculo_selecionado]
+            df_servicos_veiculo = df_servicos_veiculo[df_servicos_veiculo['Veiculo'] == veiculo_selecionado]
+            
+            #Adiciona a coluna de ocupação percentual
+            df_servicos_veiculo['Ocupação Total (%)'] = (df_servicos_veiculo['Ocupação Total'] / df_servicos_veiculo['Capacidade']) * 100
+            
             # Lista de escalas para o veículo selecionado
             escalas_disponiveis = df_servicos_veiculo['Escala'].unique().tolist()
             # Exibe um seletor para escolher a escala dentro do dataframe
@@ -122,10 +144,10 @@ if len(periodo) == 2:  # Verifica se o intervalo está completo
             else:
                 st.subheader(f'{len(df_servicos_veiculo)} escala associada ao veículo {veiculo_selecionado}')
             st.dataframe(df_servicos_veiculo, hide_index=True, use_container_width=True)
-            
+        
         st.divider()
-        st.subheader(f'Ocupação Média do Veículo {tipo_veiculo_selecionado}: {ocupacao:.2f} passageiros')
-        st.dataframe(df_filtrado_veiculo, hide_index=True, use_container_width=True)
+        st.subheader(f'Ocupação Média do Tipo de Veículo {tipo_veiculo_selecionado}: {ocupacao:.2f} passageiros')
+        st.dataframe(ocupacao_media_veiculo, hide_index=True, use_container_width=True)
             
     # Exibe o dataframe completo
     st.divider()
