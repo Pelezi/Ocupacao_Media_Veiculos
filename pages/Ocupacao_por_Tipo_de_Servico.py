@@ -45,7 +45,7 @@ st.title('Ocupação por Tipo de Serviço')
 st.divider()
 
 # Input de intervalo de data
-row0 = st.columns(5)
+row0 = st.columns(6)
 with row0[0]:
     periodo = st.date_input('Período', value=[], format='DD/MM/YYYY')
 
@@ -58,15 +58,21 @@ if len(periodo) == 2:  # Verifica se o intervalo está completo
         (st.session_state.df_vehicle_occupation['Data Execucao'] <= data_final)
     ].reset_index(drop=True)
     
+    
+    # Conta a quantidade de escalas por veículo, agrupando por Veículo e Escala
+    escalas_por_escala = df_filtrado.groupby(['Tipo de Veiculo', 'Veiculo', 'Tipo de Servico'])[['Escala']].nunique().reset_index()
+    
+    #Renomeia a coluna escala para escalas
+    escalas_por_escala.rename(columns={'Escala': 'Escalas'}, inplace=True)
+    base_por_escala = df_filtrado.groupby(['Tipo de Veiculo', 'Veiculo', 'Capacidade', 'Escala', 'Tipo de Servico'])[['Total ADT', 'Total CHD']].sum().reset_index()
+    
     #Select "Agrupar por:" - Tipo de Serviço ou Tipo de Veículo
     with row0[1]:
-        agrupar_por = st.selectbox('Agrupar por:', ['Tipo de Serviço', 'Tipo de Veículo'], index=0)
-        
-    base_por_escala = df_filtrado.groupby(['Tipo de Veiculo', 'Veiculo', 'Capacidade', 'Escala'])[['Total ADT', 'Total CHD']].sum().reset_index()
+        agrupar_por = st.selectbox('Agrupar por:', ['Tipo de Serviço', 'Tipo de Veículo'], index=None)
         
     if agrupar_por == 'Tipo de Serviço':
         # Conta a quantidade de escalas por tipo de serviço, agrupando por Tipo de Serviço
-        escalas_por_tipo_servico = df_filtrado.groupby(['Tipo de Servico'])[['Escala']].count().reset_index()
+        escalas_por_tipo_servico = df_filtrado.groupby(['Tipo de Servico'])[['Escala']].nunique().reset_index()
         
         #Calcula a porcentagem de escalas por tipo de serviço
         escalas_por_tipo_servico['Porcentagem'] = escalas_por_tipo_servico['Escala'] / escalas_por_tipo_servico['Escala'].sum() * 100
@@ -86,8 +92,8 @@ if len(periodo) == 2:  # Verifica se o intervalo está completo
         if tipo_servico_selecionado:
             # Filtra o dataframe para o tipo de serviço selecionado
             escalas_base = df_filtrado[df_filtrado['Tipo de Servico'] == tipo_servico_selecionado]
-            escalas_por_tipo_veiculo = escalas_base.groupby(['Tipo de Veiculo'])[['Escala']].count().reset_index()
-            escalas_por_veiculo = escalas_base.groupby(['Tipo de Veiculo', 'Veiculo'])[['Escala']].count().reset_index()
+            escalas_por_tipo_veiculo = escalas_base.groupby(['Tipo de Veiculo'])[['Escala']].nunique().reset_index()
+            escalas_por_veiculo = escalas_base.groupby(['Tipo de Veiculo', 'Veiculo'])[['Escala']].nunique().reset_index()
             #Calcula a porcentagem de escalas por tipo de veículo e veículo
             escalas_por_tipo_veiculo['Porcentagem'] = escalas_por_tipo_veiculo['Escala'] / escalas_por_tipo_veiculo['Escala'].sum() * 100
             escalas_por_veiculo['Porcentagem'] = escalas_por_veiculo['Escala'] / escalas_por_veiculo['Escala'].sum() * 100
@@ -114,7 +120,7 @@ if len(periodo) == 2:  # Verifica se o intervalo está completo
                     (df_filtrado['Tipo de Veiculo'] == tipo_veiculo_selecionado)
                 ]
                 #Conta a quantidade de escalas por veículo
-                escalas_por_veiculo = escalas_por_veiculo.groupby(['Veiculo'])[['Escala']].count().reset_index()
+                escalas_por_veiculo = escalas_por_veiculo.groupby(['Veiculo'])[['Escala']].nunique().reset_index()
                 #Calcula a porcentagem de escalas por veículo
                 escalas_por_veiculo['Porcentagem'] = escalas_por_veiculo['Escala'] / escalas_por_veiculo['Escala'].sum() * 100
                 #Calcula a porcentagem sobre a quantidade total geral de escalas
@@ -131,11 +137,28 @@ if len(periodo) == 2:  # Verifica se o intervalo está completo
                 
                 # Se um veículo for selecionado, exibe as escalas associadas
                 if veiculo_selecionado:
-                    escalas_por_veiculo_selecionado = base_por_escala[(base_por_escala['Tipo de Veiculo'] == tipo_veiculo_selecionado) & (base_por_escala['Veiculo'] == veiculo_selecionado)]
+                    escalas_por_veiculo_selecionado = base_por_escala[(base_por_escala['Tipo de Veiculo'] == tipo_veiculo_selecionado) & (base_por_escala['Veiculo'] == veiculo_selecionado) & (base_por_escala['Tipo de Servico'] == tipo_servico_selecionado)]
+                
+                    #Select escalas
+                    lista_escala = escalas_por_veiculo_selecionado['Escala'].unique().tolist()
+                    with row0[5]:
+                        escala_selecionada = st.selectbox('Selecionar Escala', sorted(lista_escala), index=None)
+                    
+                    # Se uma escala for selecionada, exibe os serviços associados
+                    if escala_selecionada:
+                        escalas_por_servico = df_filtrado[
+                            (df_filtrado['Tipo de Veiculo'] == tipo_veiculo_selecionado) &
+                            (df_filtrado['Veiculo'] == veiculo_selecionado) &
+                            (df_filtrado['Escala'] == escala_selecionada)
+                        ]
+                        #Remove a coluna tipo de veículo
+                        escalas_por_servico = escalas_por_servico.drop(columns=['Tipo de Veiculo'])
+                        st.divider()
+                        st.subheader(f'Serviços associados a Escala {escala_selecionada}')
+                        st.dataframe(escalas_por_servico, hide_index=True, use_container_width=True)
                     st.divider()
                     st.subheader(f'Escalas por Veículo - {tipo_servico_selecionado} - {tipo_veiculo_selecionado} - {veiculo_selecionado}')
                     st.dataframe(escalas_por_veiculo_selecionado, hide_index=True, use_container_width=True)
-                
                 st.divider()
                 st.subheader(f'Escalas por Tipo de Veículo - {tipo_servico_selecionado} - {tipo_veiculo_selecionado}')
                 st.dataframe(escalas_por_veiculo, hide_index=True, use_container_width=True)
@@ -148,41 +171,125 @@ if len(periodo) == 2:  # Verifica se o intervalo está completo
         # Exibe o dataframe completo de quantidade de escalas por tipo de serviço
         st.divider()
         st.subheader('Escalas por Tipo de Serviço')
+        st.text("Total de Escalas: " + str(escalas_por_tipo_servico['Escalas'].sum()))
         st.dataframe(escalas_por_tipo_servico, hide_index=True, use_container_width=True)
-    else:
-        # Conta a quantidade de escalas por veículo, agrupando por Veículo e Escala
-        escalas_por_escala = df_filtrado.groupby(['Tipo de Veiculo', 'Veiculo', 'Tipo de Servico'])[['Escala']].count().reset_index()
-        
-        #Renomeia a coluna escala para escalas
-        escalas_por_escala.rename(columns={'Escala': 'Escalas'}, inplace=True)
+    elif agrupar_por == 'Tipo de Veículo':
 
-        escalas_por_tipo_veiculo = escalas_por_escala.groupby(['Tipo de Veiculo', 'Tipo de Servico'])[['Escalas']].sum().reset_index()
+        # Conta a quantidade de escalas por tipo de veículo, agrupando por Tipo de Veículo e Tipo de Serviço
+        escalas_por_tipo_veiculo = escalas_por_escala.groupby(['Tipo de Veiculo'])[['Escalas']].sum().reset_index()
+        escalas_por_tipo_veiculo_tipo_servico = escalas_por_escala.groupby(['Tipo de Veiculo', 'Tipo de Servico'])[['Escalas']].sum().reset_index()
+        
+        #Calcula a porcentagem de escalas por tipo de veículo
+        escalas_por_tipo_veiculo['Porcentagem'] = escalas_por_tipo_veiculo['Escalas'] / escalas_por_tipo_veiculo['Escalas'].sum() * 100
+        escalas_por_tipo_veiculo_tipo_servico['Porcentagem'] = escalas_por_tipo_veiculo_tipo_servico['Escalas'] / escalas_por_tipo_veiculo_tipo_servico['Escalas'].sum() * 100
         
         #Ordena pelo número de escalas
         escalas_por_tipo_veiculo = escalas_por_tipo_veiculo.sort_values(by='Escalas', ascending=False).reset_index(drop=True)
+        escalas_por_tipo_veiculo_tipo_servico = escalas_por_tipo_veiculo_tipo_servico.sort_values(by='Escalas', ascending=False).reset_index(drop=True)
         
         # Exibe a lista de tipos de veículos para seleção
         lista_veiculos = escalas_por_escala['Tipo de Veiculo'].unique().tolist()
         with row0[2]:
             tipo_veiculo_selecionado = st.selectbox('Selecionar Tipo de Veículo', sorted(lista_veiculos), index=None)
 
-        # Se um tipo de veículo for selecionado, exibe a ocupação média
+        # Se um tipo de veículo for selecionado, exibe a quantidade de escala por veículo
         if tipo_veiculo_selecionado:
-            
-            st.divider()
-            st.subheader(f'Ocupação por Tipo de Serviço - {tipo_veiculo_selecionado}')
             escalas_por_tipo_veiculo_selecionado = escalas_por_escala[
                 escalas_por_escala['Tipo de Veiculo'] == tipo_veiculo_selecionado
             ].reset_index(drop=True)
+            escalas_por_tipo_veiculo_selecionado_veiculo = escalas_por_tipo_veiculo_selecionado.groupby(['Veiculo'])[['Escalas']].sum().reset_index()
+            escalas_por_tipo_veiculo_selecionado_tipo_servico = escalas_por_tipo_veiculo_selecionado.groupby(['Tipo de Servico'])[['Escalas']].sum().reset_index()
+            #Calcula a porcentagem de escalas por tipo de serviço
+            escalas_por_tipo_veiculo_selecionado['Porcentagem'] = escalas_por_tipo_veiculo_selecionado['Escalas'] / escalas_por_tipo_veiculo_selecionado['Escalas'].sum() * 100
+            escalas_por_tipo_veiculo_selecionado_veiculo['Porcentagem'] = escalas_por_tipo_veiculo_selecionado_veiculo['Escalas'] / escalas_por_tipo_veiculo_selecionado_veiculo['Escalas'].sum() * 100
+            escalas_por_tipo_veiculo_selecionado_tipo_servico['Porcentagem'] = escalas_por_tipo_veiculo_selecionado_tipo_servico['Escalas'] / escalas_por_tipo_veiculo_selecionado_tipo_servico['Escalas'].sum() * 100
+            #Calcula a porcentagem sobre a quantidade total geral de escalas
+            escalas_por_tipo_veiculo_selecionado['Porcentagem Total'] = escalas_por_tipo_veiculo_selecionado['Escalas'] / escalas_por_tipo_veiculo['Escalas'].sum() * 100
+            escalas_por_tipo_veiculo_selecionado_veiculo['Porcentagem Total'] = escalas_por_tipo_veiculo_selecionado_veiculo['Escalas'] / escalas_por_tipo_veiculo['Escalas'].sum() * 100
+            escalas_por_tipo_veiculo_selecionado_tipo_servico['Porcentagem Total'] = escalas_por_tipo_veiculo_selecionado_tipo_servico['Escalas'] / escalas_por_tipo_veiculo['Escalas'].sum() * 100
+            #Ordena pelo número de escalas
             escalas_por_tipo_veiculo_selecionado = escalas_por_tipo_veiculo_selecionado.sort_values(by='Escalas', ascending=False).reset_index(drop=True)
-            st.dataframe(escalas_por_tipo_veiculo_selecionado, hide_index=True, use_container_width=True)
-        else:
-            # Exibe o dataframe completo de quantidade de escalas por veículo ordenado pela quantidade de escalas
+            escalas_por_tipo_veiculo_selecionado_veiculo = escalas_por_tipo_veiculo_selecionado_veiculo.sort_values(by='Escalas', ascending=False).reset_index(drop=True)
+            escalas_por_tipo_veiculo_selecionado_tipo_servico = escalas_por_tipo_veiculo_selecionado_tipo_servico.sort_values(by='Escalas', ascending=False).reset_index(drop=True)
+            #Remove a coluna Tipo Veículo
+            escalas_por_tipo_veiculo_selecionado = escalas_por_tipo_veiculo_selecionado.drop(columns=['Tipo de Veiculo'])
+            
+            #Select Veículo
+            lista_veiculos = escalas_por_tipo_veiculo_selecionado['Veiculo'].unique().tolist()
+            with row0[3]:
+                veiculo_selecionado = st.selectbox('Selecionar Veículo', sorted(lista_veiculos), index=None)
+            
+            # Se um veículo for selecionado, exibe a contagem de escalas por tipo de servicço, e a lista das escalas associadas com uma coluna do tipo de serviço
+            if veiculo_selecionado:
+                escalas_por_veiculo_selecionado = escalas_por_tipo_veiculo_selecionado[escalas_por_tipo_veiculo_selecionado['Veiculo'] == veiculo_selecionado]
+                #Calcula a porcentagem de escalas por tipo de serviço
+                escalas_por_veiculo_selecionado['Porcentagem'] = escalas_por_veiculo_selecionado['Escalas'] / escalas_por_veiculo_selecionado['Escalas'].sum() * 100
+                #Calcula a porcentagem sobre a quantidade total geral de escalas
+                escalas_por_veiculo_selecionado['Porcentagem Total'] = escalas_por_veiculo_selecionado['Escalas'] / escalas_por_tipo_veiculo['Escalas'].sum() * 100
+                #Ordena pelo número de escalas
+                escalas_por_veiculo_selecionado = escalas_por_veiculo_selecionado.sort_values(by='Escalas', ascending=False).reset_index(drop=True)
+                
+                #Select tipo de serviço
+                lista_servicos = escalas_por_veiculo_selecionado['Tipo de Servico'].unique().tolist()
+                with row0[4]:
+                    tipo_servico_selecionado = st.selectbox('Selecionar Tipo de Serviço', sorted(lista_servicos), index=None)
+                
+                # Se um tipo de serviço for selecionado, exibe as escalas associadas
+                if tipo_servico_selecionado:
+                    escalas_por_veiculo_selecionado_tipo_servico_selecionado = base_por_escala[(base_por_escala['Tipo de Veiculo'] == tipo_veiculo_selecionado) & (base_por_escala['Veiculo'] == veiculo_selecionado) & (base_por_escala['Tipo de Servico'] == tipo_servico_selecionado)]
+                    
+                    #Select escalas
+                    lista_escala = escalas_por_veiculo_selecionado_tipo_servico_selecionado['Escala'].unique().tolist()
+                    with row0[5]:
+                        escala_selecionada = st.selectbox('Selecionar Escala', sorted(lista_escala), index=None)
+                        
+                    # Se uma escala for selecionada, exibe os serviços associados
+                    if escala_selecionada:
+                        escalas_por_servico = df_filtrado[
+                            (df_filtrado['Tipo de Veiculo'] == tipo_veiculo_selecionado) &
+                            (df_filtrado['Veiculo'] == veiculo_selecionado) &
+                            (df_filtrado['Tipo de Servico'] == tipo_servico_selecionado) &
+                            (df_filtrado['Escala'] == escala_selecionada)
+                        ]
+                        #Remove a coluna tipo de veículo
+                        escalas_por_servico = escalas_por_servico.drop(columns=['Tipo de Veiculo'])
+                        st.divider()
+                        st.subheader(f'Serviços associados a Escala {escala_selecionada}')
+                        st.dataframe(escalas_por_servico, hide_index=True, use_container_width=True)
+                        
+                    st.divider()
+                    st.subheader(f'Escalas por Veículo - {tipo_servico_selecionado} - {tipo_veiculo_selecionado} - {veiculo_selecionado}')
+                    st.dataframe(escalas_por_veiculo_selecionado_tipo_servico_selecionado, hide_index=True, use_container_width=True)
+                
+                st.divider()
+                st.subheader(f'Escalas por Veículo e Tipo de Serviço - {tipo_veiculo_selecionado} - {veiculo_selecionado}')
+                st.dataframe(escalas_por_veiculo_selecionado, hide_index=True, use_container_width=True)
+            
             st.divider()
+            st.subheader(f'Escalas por Tipo de Veículo - {tipo_veiculo_selecionado}')
+            st.text("Total de Escalas - " + str(tipo_veiculo_selecionado) + ": " + str(escalas_por_tipo_veiculo_selecionado['Escalas'].sum()))
+            st.dataframe(escalas_por_tipo_veiculo_selecionado_tipo_servico, hide_index=True, use_container_width=True)
+            st.subheader('Escalas por Veículo')
+            st.dataframe(escalas_por_tipo_veiculo_selecionado_veiculo, hide_index=True, use_container_width=True)
             st.subheader('Escalas por Veículo e Tipo de Serviço')
-            escalas_por_escala = escalas_por_escala.sort_values(by='Escalas', ascending=False).reset_index(drop=True)
-            st.dataframe(escalas_por_escala, hide_index=True, use_container_width=True)
+            st.dataframe(escalas_por_tipo_veiculo_selecionado, hide_index=True, use_container_width=True)
         # Exibe o dataframe completo de quantidade de escalas por tipo de veículo
         st.divider()
-        st.subheader('Escalas por Tipo de Veículo e Total de Escalas')
+        st.subheader('Escalas por Tipo de Veículo')
+        st.text("Total de Escalas: " + str(escalas_por_tipo_veiculo['Escalas'].sum()))
         st.dataframe(escalas_por_tipo_veiculo, hide_index=True, use_container_width=True)
+        st.subheader('Escalas por Tipo de Veículo e Tipo de Serviço')
+        st.dataframe(escalas_por_tipo_veiculo_tipo_servico, hide_index=True, use_container_width=True)
+    else:
+        #Agrupa por veículo
+        escalas_por_escala_geral = escalas_por_escala.groupby(['Tipo de Veiculo', 'Veiculo'])[['Escalas']].sum().reset_index()
+        #Calcula a porcentagem de escalas por veículo
+        escalas_por_escala_geral['Porcentagem'] = escalas_por_escala_geral['Escalas'] / escalas_por_escala_geral['Escalas'].sum() * 100
+        #Ordena pelo número de escalas
+        escalas_por_escala_geral = escalas_por_escala_geral.sort_values(by='Escalas', ascending=False).reset_index(drop=True)
+        # Exibe o dataframe completo de quantidade de escalas por veículo ordenado pela quantidade de escalas
+        st.divider()
+        st.subheader('Escalas por Veículo')
+        st.text("Total de Escalas: " + str(escalas_por_escala_geral['Escalas'].sum()))
+        st.dataframe(escalas_por_escala_geral, hide_index=True, use_container_width=True)
+    
